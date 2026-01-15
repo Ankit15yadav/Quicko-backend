@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { SendOtpDto } from "./dto/sendOtp.dto";
+import { SendOtpDto } from "../dto/sendOtp.dto";
 
 @Injectable()
 export class AuthService {
@@ -10,7 +10,7 @@ export class AuthService {
             error: 'phone Number is not presnet'
         }
 
-        if (phoneNumber.length < 10) return { error: 'phonenumber should be of length 10' }
+        if (phoneNumber.length < 10 || phoneNumber.length > 10) return { error: 'phonenumber should be of length 10' }
 
         // SEND OTP LOGIC
         // CHECK USER EXISTS OR NOT
