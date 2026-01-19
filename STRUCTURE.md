@@ -19,17 +19,17 @@ src/
 │   ├── middlewares/               # Custom middleware
 │   ├── pipes/                     # Validation & transformation pipes
 │   ├── index.ts                   # Barrel exports
-│   └── README.md
+│   
 │
 ├── config/                        # Configuration files
 │   ├── throttle.config.ts         # Rate limiting configuration
 │   ├── index.ts                   # Barrel exports
-│   └── README.md
+│   
 │
 ├── core/                          # Core application functionality
 │   ├── routing/                   # Application routing
 │   │   └── app.routes.ts          # Route definitions
-│   └── README.md
+│   
 │
 ├── modules/                       # Feature modules
 │   ├── auth/                      # Authentication module
@@ -54,7 +54,7 @@ src/
 └── shared/                        # Shared business logic
     ├── interfaces/                # Shared interfaces
     ├── types/                     # Shared types
-    └── README.md
+    
 ```
 
 ## Design Principles

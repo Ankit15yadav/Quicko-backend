@@ -1,9 +1,10 @@
-import { DynamicModule, Module } from '@nestjs/common';
-import { APP_GUARD, RouterModule } from '@nestjs/core';
+import { DynamicModule, Module, } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AppRoutingModule } from './app.routing.module';
 import { rateLimitPresets } from './config/throttle.config';
-import { APP_ROUTES } from './core/routing/app.routes';
 import { AuthModule } from './modules/auth/auth.module';
+import { RedisModule } from './redis/redis.module';
 
 enum StoreType {
   MEMORY = 'memory',
@@ -18,7 +19,8 @@ const DEFAULT_STORE_TYPE = StoreType.MEMORY
   imports: [
     AuthModule,
     ThrottlerModule.forRoot(rateLimitPresets),
-    RouterModule.register(APP_ROUTES)
+    AppRoutingModule,
+    RedisModule
   ],
   controllers: [],
   providers: [{

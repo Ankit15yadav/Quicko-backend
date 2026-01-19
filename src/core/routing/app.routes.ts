@@ -1,9 +1,4 @@
+import { AUTH_ROUTES } from "@/modules/auth/auth.routes";
 import { RouteTree } from "@nestjs/core";
-import { AuthModule } from "../../modules/auth/auth.module";
 
-export const APP_ROUTES: RouteTree[] = [
-    {
-        path: '/auth',
-        module: AuthModule
-    }
-];
+export const APP_ROUTES: RouteTree[] = [...AUTH_ROUTES];
