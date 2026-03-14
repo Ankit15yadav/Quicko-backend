@@ -1,16 +1,14 @@
+import { BullModule } from '@nestjs/bullmq';
 import { DynamicModule, Module, } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppRoutingModule } from './app.routing.module';
 import { ParseDateOptions } from './common/pipes/parse-date.pipe';
 import { APP_CONFIG } from './config/app.config';
-import { rateLimitPresets } from './config/throttle.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { JobsController } from './modules/jobs/jobs.controller';
 import { RedisModuleV2 } from './redis-v2/redis-v2.module';
-import { RedisModule } from './redis/redis.module';
 import { TwilioModule } from './twilio/twilio.module';
 
 enum StoreType {
@@ -31,10 +29,24 @@ const DEFAULT_STORE_TYPE = StoreType.MEMORY
       isGlobal: true,
       ignoreEnvFile: false
     }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.get<string>('REDIS_HOST'),
+          port: configService.get<number>('REDIS_PORT')
+        }
+      })
+
+    }),
     AuthModule,
-    ThrottlerModule.forRoot(rateLimitPresets),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { ttl: 60000, limit: 2 },
+        { name: 'otp-rate-limiter', ttl: 60000, limit: 3 }
+      ]
+    }),
     AppRoutingModule,
-    RedisModule,
     RedisModuleV2,
     TwilioModule,
     MongooseModule.forRootAsync({
@@ -51,10 +63,6 @@ const DEFAULT_STORE_TYPE = StoreType.MEMORY
       storeName: DEFAULT_STORE_NANE,
       storeType: DEFAULT_STORE_TYPE
     }
-  },
-  {
-    provide: APP_GUARD,
-    useClass: ThrottlerGuard,
   },
   {
     provide: ParseDateOptions,

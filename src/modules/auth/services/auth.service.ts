@@ -1,57 +1,75 @@
-import { DEFAULT_OTP_EXPIRY_TIME, INDIA_COUNTRY_CODE, MAX_OTP_VALUE, MIN_OTP_VALUE } from "@/common/constants";
+import { DEFAULT_OTP_EXPIRY_TIME, INDIA_COUNTRY_CODE, MAX_OTP_VALUE, MIN_OTP_VALUE, OTP_QUEUE, SEND_OTP } from "@/common/constants";
 import { REDIS_CLIENT } from "@/redis-v2/redis-v2.module";
-import { RedisService } from "@/redis/redis.service";
 import { User } from "@/schema/user";
-import { TwilioService } from "@/twilio/twilio.service";
-import { GenerateOtp } from "@/utils";
-import { Inject, Injectable } from "@nestjs/common";
+import { createCryptoHash, GenerateOtp } from "@/utils";
+import { InjectQueue } from '@nestjs/bullmq';
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
+import { Queue } from 'bullmq';
 import Redis from "ioredis";
 import { Model } from "mongoose";
 import { SendOtpDto } from "../dto/sendOtp.dto";
 
+interface Payload {
+    otp: string,
+    attempts: number,
+    isVerified: boolean
+}
 @Injectable()
 export class AuthService {
 
     constructor(
-        private readonly redisService: RedisService,
         @InjectModel(User.name)
         private userModel: Model<User>,
-        private twilioService: TwilioService,
+        @InjectQueue(OTP_QUEUE) private otpQueue: Queue,
         @Inject(REDIS_CLIENT) private readonly redis: Redis
     ) { }
 
     public async sendOtp(body: SendOtpDto) {
         const { phoneNumber } = body;
         const PHONE_NUMBER = `${INDIA_COUNTRY_CODE}${phoneNumber}`
-        const OTP = GenerateOtp(PHONE_NUMBER, MAX_OTP_VALUE, MIN_OTP_VALUE)
+        const otpKey = `otp:${PHONE_NUMBER}`
 
+        const existing = await this.redis.get(otpKey);
+        if (existing) {
+            throw new ConflictException("An OTP was already sent. Please wait before retrying.");
+        }
+
+        const OTP = GenerateOtp(PHONE_NUMBER, MAX_OTP_VALUE, MIN_OTP_VALUE)
         const { otp, hashWithExpiryTime } = OTP;
 
-        const payLoad = {
+        const payLoad: Payload = {
             otp: hashWithExpiryTime,
             attempts: 0,
             isVerified: false,
         }
-        console.log(payLoad)
-        await this.redis.set(`otp:${PHONE_NUMBER}`, JSON.stringify(payLoad), 'EX', DEFAULT_OTP_EXPIRY_TIME)
-        // const messageResponse = await this.twilioService.sendOtpToMobileNumber(fullPhoneNumber, otp)
 
-        const value = await this.redis.get(`otp:${PHONE_NUMBER}`)
+        await Promise.all([
+            await this.redis.set(otpKey, JSON.stringify(payLoad), 'EX', DEFAULT_OTP_EXPIRY_TIME),
+            await this.otpQueue.add(SEND_OTP, { phoneNumber: PHONE_NUMBER, otp })
+        ])
+
         return {
-            otp, hashWithExpiryTime, value,
+            message: "REQUEST ACCEPTED",
+            success: true,
         }
     }
 
 
     public async verifyOtp(phoneNumber: string, otp: string) {
-        const otpKey = `otp:${phoneNumber}`;
 
-        console.log('sent otp', otp)
+        const PHONE_NUMBER = `${INDIA_COUNTRY_CODE}${phoneNumber}`
+        const otpKey = `otp:${PHONE_NUMBER}`;
+        const data = `${PHONE_NUMBER}.${otp}`
 
-        // Retrieve stored OTP from Redis
-        const storedOtp = await this.redisService.get<string>(otpKey);
-        console.log('stored', storedOtp)
+        const cachedOtp = await this.redis.get(otpKey) ?? "";
+        const parsedOtp = JSON.parse(cachedOtp) as Payload
+
+        // const parsedOtp: string = cachedOtp ? JSON.parse(cachedOtp) : "";
+        const [storedOtp, otpGenerationTime] = parsedOtp.otp.split('.');
+
+        const HashedOtp = createCryptoHash(data)
+        const [otpHash, otpValidationTime] = HashedOtp.split('.')
 
         if (!storedOtp) {
             return {
@@ -60,10 +78,8 @@ export class AuthService {
             };
         }
 
-        // Verify OTP
-        if (storedOtp !== otp) {
-            // Publish OTP failed event (fire and forget - don't block response)
-            this.redisService.publish('otp-events', JSON.stringify({
+        if (storedOtp !== otpHash) {
+            this.redis.publish('otp-events', JSON.stringify({
                 type: 'otp_failed',
                 phoneNumber,
                 reason: 'Invalid OTP',
@@ -76,17 +92,13 @@ export class AuthService {
             };
         }
 
-        // OTP is valid - delete it from Redis (this must complete)
-        await this.redisService.del(otpKey);
+        await this.redis.del(otpKey);
 
-        // Publish OTP verified event (fire and forget - don't block response)
-        this.redisService.publish('otp-events', JSON.stringify({
+        this.redis.publish('otp-events', JSON.stringify({
             type: 'otp_verified',
             phoneNumber,
             timestamp: Date.now()
         })).catch(err => console.error('Failed to publish otp_verified event:', err));
-
-        // TODO: Generate JWT token, create user session, etc.
 
         return {
             verified: true,

@@ -1,6 +1,6 @@
 import { PhoneNumberGuard } from "@/common/guards/phone-number.guard";
-import { Body, Controller, Post, UseGuards, ValidationPipe, Version } from "@nestjs/common";
-import { SkipThrottle } from "@nestjs/throttler";
+import { Body, Controller, HttpCode, HttpStatus, Post, Query, UseGuards, ValidationPipe, Version } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { SendOtpDto } from "../dto/sendOtp.dto";
 import { AuthService } from "../services/auth.service";
 
@@ -10,8 +10,12 @@ export class AuthController {
 
     @Version('1')
     @Post('/send-otp')
+    @HttpCode(HttpStatus.ACCEPTED)
     @UseGuards(PhoneNumberGuard)
-    async sendOTPV1(
+    @Throttle({
+        'otp-rate-limiter': { ttl: 50_000, limit: 1 }
+    })
+    async sendOtp(
         @Body(
             new ValidationPipe({
                 whitelist: true,
@@ -22,15 +26,14 @@ export class AuthController {
     }
 
     @Version('1')
-    @SkipThrottle({ burst: true })
     @Post('/verify-otp')
     async verifyOtp(
         @Body()
         body: {
-            phoneNumber: string;
             otp: string;
         },
+        @Query('phoneNumber') phoneNumber: string
     ) {
-        return this.authService.verifyOtp(body.phoneNumber, body.otp);
+        return this.authService.verifyOtp(phoneNumber, body.otp);
     }
 }
