@@ -9,6 +9,7 @@ import { APP_CONFIG } from './config/app.config';
 import { rateLimitPresets } from './config/throttle.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { JobsController } from './modules/jobs/jobs.controller';
+import { RedisModuleV2 } from './redis-v2/redis-v2.module';
 import { RedisModule } from './redis/redis.module';
 import { TwilioModule } from './twilio/twilio.module';
 
@@ -34,6 +35,7 @@ const DEFAULT_STORE_TYPE = StoreType.MEMORY
     ThrottlerModule.forRoot(rateLimitPresets),
     AppRoutingModule,
     RedisModule,
+    RedisModuleV2,
     TwilioModule,
     MongooseModule.forRootAsync({
       inject: [ConfigService],

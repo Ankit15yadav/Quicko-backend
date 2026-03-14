@@ -1,10 +1,12 @@
-import { INDIA_COUNTRY_CODE, MAX_OTP_VALUE, MIN_OTP_VALUE } from "@/common/constants";
+import { DEFAULT_OTP_EXPIRY_TIME, INDIA_COUNTRY_CODE, MAX_OTP_VALUE, MIN_OTP_VALUE } from "@/common/constants";
+import { REDIS_CLIENT } from "@/redis-v2/redis-v2.module";
 import { RedisService } from "@/redis/redis.service";
 import { User } from "@/schema/user";
 import { TwilioService } from "@/twilio/twilio.service";
 import { GenerateOtp } from "@/utils";
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
+import Redis from "ioredis";
 import { Model } from "mongoose";
 import { SendOtpDto } from "../dto/sendOtp.dto";
 
@@ -15,20 +17,29 @@ export class AuthService {
         private readonly redisService: RedisService,
         @InjectModel(User.name)
         private userModel: Model<User>,
-        private twilioService: TwilioService
+        private twilioService: TwilioService,
+        @Inject(REDIS_CLIENT) private readonly redis: Redis
     ) { }
 
     public async sendOtp(body: SendOtpDto) {
         const { phoneNumber } = body;
+        const PHONE_NUMBER = `${INDIA_COUNTRY_CODE}${phoneNumber}`
+        const OTP = GenerateOtp(PHONE_NUMBER, MAX_OTP_VALUE, MIN_OTP_VALUE)
 
-        const fullPhoneNumber = `${INDIA_COUNTRY_CODE}${phoneNumber}`
-        const OTP = GenerateOtp(MAX_OTP_VALUE, MIN_OTP_VALUE)
-        const messageResponse = await this.twilioService.sendOtpToMobileNumber(fullPhoneNumber, OTP)
+        const { otp, hashWithExpiryTime } = OTP;
 
+        const payLoad = {
+            otp: hashWithExpiryTime,
+            attempts: 0,
+            isVerified: false,
+        }
+        console.log(payLoad)
+        await this.redis.set(`otp:${PHONE_NUMBER}`, JSON.stringify(payLoad), 'EX', DEFAULT_OTP_EXPIRY_TIME)
+        // const messageResponse = await this.twilioService.sendOtpToMobileNumber(fullPhoneNumber, otp)
+
+        const value = await this.redis.get(`otp:${PHONE_NUMBER}`)
         return {
-            status: messageResponse.status,
-            message: messageResponse,
-            phone: fullPhoneNumber
+            otp, hashWithExpiryTime, value,
         }
     }
 

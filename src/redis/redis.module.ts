@@ -14,7 +14,6 @@ import { RedisService } from './redis.service';
                         host: 'localhost',
                         port: 6379,
                     },
-                    ttl: 60000
                 }),
             }),
             isGlobal: true,

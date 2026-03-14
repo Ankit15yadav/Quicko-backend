@@ -20,6 +20,7 @@ export class RedisService implements OnModuleInit {
                 host,
                 port,
             },
+            database: 0
         });
 
         this.subscriberClient = createClient({
@@ -27,6 +28,7 @@ export class RedisService implements OnModuleInit {
                 host,
                 port,
             },
+            database: 0
         });
 
         await this.publisherClient.connect();

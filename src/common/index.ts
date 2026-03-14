@@ -2,7 +2,7 @@
 // This file serves as a barrel export for the common module
 
 // Constants
-// export * from './constants';
+export * from './constants';
 
 // Decorators
 // export * from './decorators';
