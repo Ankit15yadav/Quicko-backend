@@ -1,25 +1,20 @@
 import { VersioningType } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
-  console.log(process.env, Number(process.env.REDIS_PORT))
-
-  // app.connectMicroservice<MicroserviceOptions>({
-  //   transport: Transport.REDIS,
-  //   options: {
-  //     host: process.env.REDIS_HOST,
-  //     port: Number(process.env.REDIS_PORT)
-  //   }
-  // })
   app.setGlobalPrefix('api')
+  // const httpAdapterHost = app.get(HttpAdapterHost)
+  // app.useGlobalFilters(new AppExceptionFilter(httpAdapterHost));
   app.enableVersioning({
     type: VersioningType.URI
   })
   // await app.startAllMicroservices();
-  await app.listen(3000);
+  const configService = app.get(ConfigService)
+  const PORT = configService.get<number>('APP_PORT')
+  await app.listen(PORT as number);
 }
 bootstrap();

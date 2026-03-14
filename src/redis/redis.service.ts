@@ -1,5 +1,6 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 import { createClient, type RedisClientType } from 'redis';
 
@@ -8,27 +9,28 @@ export class RedisService implements OnModuleInit {
     private publisherClient: RedisClientType;
     private subscriberClient: RedisClientType;
 
-    constructor(@Inject(CACHE_MANAGER) private cacheManager: Cache) { }
+    constructor(@Inject(CACHE_MANAGER) private cacheManager: Cache, private configService: ConfigService) { }
 
     async onModuleInit() {
-        // Initialize Redis clients for pub/sub
+
+        const host = this.configService.get<string>("REDIS_HOST")
+        const port = this.configService.get<number>('REDIS_PORT');
         this.publisherClient = createClient({
             socket: {
-                host: 'localhost',
-                port: 6379,
+                host,
+                port,
             },
         });
 
         this.subscriberClient = createClient({
             socket: {
-                host: 'localhost',
-                port: 6379,
+                host,
+                port,
             },
         });
 
         await this.publisherClient.connect();
         await this.subscriberClient.connect();
-
         console.log('Redis clients connected successfully');
     }
 
@@ -89,5 +91,15 @@ export class RedisService implements OnModuleInit {
 
     async hgetall(key: string): Promise<Record<string, string>> {
         return await this.publisherClient.hGetAll(key);
+    }
+
+    async exists(key: string): Promise<number> {
+        return await this.publisherClient.exists(key);
+    }
+
+    async isNumberBlocked(phone: string): Promise<boolean> {
+        const key = `blocked:number:${phone}`;
+        const exists = await this.publisherClient.exists(key);
+        return exists === 1;
     }
 }

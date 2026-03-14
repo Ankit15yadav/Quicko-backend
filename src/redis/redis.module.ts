@@ -1,5 +1,6 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Global, Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { redisStore } from 'cache-manager-redis-store';
 import { RedisService } from './redis.service';
 
@@ -18,6 +19,7 @@ import { RedisService } from './redis.service';
             }),
             isGlobal: true,
         }),
+        ConfigModule
     ],
     providers: [RedisService],
     exports: [CacheModule, RedisService],

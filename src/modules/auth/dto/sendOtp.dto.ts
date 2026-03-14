@@ -1,9 +1,11 @@
-import { IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator'
+import { PHONE_NUMBER_MIN_LENGTH } from '@/common/constants';
+import { IsString, Length, Matches } from 'class-validator';
 
 export class SendOtpDto {
     @IsString()
-    @IsNotEmpty()
-    @MaxLength(10)
-    @MinLength(10)
-    readonly phoneNumber: string
+    @Length(PHONE_NUMBER_MIN_LENGTH, PHONE_NUMBER_MIN_LENGTH, {
+        message: `Phone number must be exactly ${PHONE_NUMBER_MIN_LENGTH} digits`,
+    })
+    @Matches(/^[6-9]/, { message: 'Provide a valid Phone Number' })
+    phoneNumber: string;
 }

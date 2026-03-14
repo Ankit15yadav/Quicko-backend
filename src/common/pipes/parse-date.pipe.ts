@@ -1,7 +1,20 @@
 import { ArgumentMetadata, BadRequestException, Injectable, PipeTransform } from "@nestjs/common";
 
+export class ParseDateOptions {
+    fromTimeStamp: boolean;
+    errorMsg?: string
+}
 @Injectable()
 export class ParseDatePipe implements PipeTransform {
+
+    private fromTimeStamp: boolean;
+    private errorMsg: string;
+
+    constructor(options: ParseDateOptions) {
+        this.fromTimeStamp = options?.fromTimeStamp !== undefined ? options.fromTimeStamp : true;
+        this.errorMsg = options?.errorMsg || "Invalid data";
+    }
+
     transform(value: string | number, metadata: ArgumentMetadata) {
         const { data } = metadata;
         if (!data) {
