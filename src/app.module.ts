@@ -43,7 +43,8 @@ const DEFAULT_STORE_TYPE = StoreType.MEMORY
     ThrottlerModule.forRoot({
       throttlers: [
         { ttl: 60000, limit: 2 },
-        { name: 'otp-rate-limiter', ttl: 60000, limit: 3 }
+        { name: 'otp-rate-limiter', ttl: 60000, limit: 3 },
+        { name: 'verify-rate-limiter', ttl: 60000, limit: 4 }
       ]
     }),
     AppRoutingModule,

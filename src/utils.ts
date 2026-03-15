@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import { FIVE_MINUTES } from "./common/constants";
 import { IGenerateOtp } from "./common/interface";
 import { APP_CONFIG } from "./config/app.config";
@@ -25,4 +26,16 @@ export const createCryptoRandom = (min: number, max: number) => {
 export const createCryptoHash = (data: any) => {
     const key = APP_CONFIG().SECRET.OTP ?? "";
     return crypto.createHmac('sha256', key).update(data).digest('hex')
+}
+
+export const validateHash = (h1: string, h2: string) => {
+    return h1 === h2;
+}
+
+export const generateToken = (payload: JwtPayload, accessTokenSecretKey: string, refreshTokenSecretKey: string) => {
+
+    const accessToken = jwt.sign(payload, accessTokenSecretKey, { expiresIn: '1h', })
+    const refreshToken = jwt.sign(payload, refreshTokenSecretKey, { expiresIn: '10d' })
+
+    return { accessToken, refreshToken }
 }
