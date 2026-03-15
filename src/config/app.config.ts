@@ -12,6 +12,11 @@ export function APP_CONFIG() {
             SID: process.env['TWILIO_SID'],
             AUTH_TOKEN: process.env['TWILIO_AUTH_TOKEN'],
             PHONE: process.env['TWILIO_PHONE_NUMBER'],
+        },
+        SECRET: {
+            OTP: process.env['CRYPTO_SHA_KEY'],
+            ACCESS_TOKEN: process.env['ACCESS_JWT_SECRET'],
+            REFRESH_TOKEN: process.env['REFRESH_JWT_SECRET']
         }
     }
 } 

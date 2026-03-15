@@ -1,15 +1,15 @@
-import { IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator'
+import { IsNotEmpty, IsNumberString, Length } from 'class-validator';
 
-export class VerifyOtpDto {
-    @IsString()
+export class VerifyOtpQueryDto {
     @IsNotEmpty()
-    @MaxLength(10)
-    @MinLength(10)
-    readonly phoneNumber: string
+    @IsNumberString()
+    @Length(10, 10, { message: 'Phone number must be exactly 10 digits' })
+    phoneNumber: string;
+}
 
-    @IsString()
+export class VerifyOtpBodyDto {
     @IsNotEmpty()
-    @MaxLength(6)
-    @MinLength(6)
-    readonly otp: string
+    @IsNumberString()
+    @Length(6, 6, { message: 'OTP must be exactly 6 digits' })
+    otp: string;
 }

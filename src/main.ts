@@ -12,7 +12,15 @@ async function bootstrap() {
   app.enableVersioning({
     type: VersioningType.URI
   })
-  // await app.startAllMicroservices();
+  app.enableCors({
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:5173',
+    ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })
   const configService = app.get(ConfigService)
   const PORT = configService.get<number>('APP_PORT')
   await app.listen(PORT as number);
