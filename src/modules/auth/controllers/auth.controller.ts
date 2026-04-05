@@ -1,43 +1,101 @@
-import { PhoneNumberGuard } from "@/common/guards/phone-number.guard";
-import { Body, Controller, HttpCode, HttpStatus, Post, Query, UseGuards, ValidationPipe, Version } from "@nestjs/common";
-import { SkipThrottle, Throttle } from "@nestjs/throttler";
-import { SendOtpDto } from "../dto/sendOtp.dto";
-import { VerifyOtpBodyDto, VerifyOtpQueryDto } from "../dto/verifyOtp.dto";
-import { AuthService } from "../services/auth.service";
+import { Public } from '@/common/decorators';
+import { PhoneNumberGuard } from '@/common/guards/phone-number.guard';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+  UseGuards,
+  ValidationPipe,
+  Version,
+} from '@nestjs/common';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { RefreshTokenDto } from '../dto/refresh-token.dto';
+import { SendOtpDto } from '../dto/sendOtp.dto';
+import { VerifyOtpBodyDto, VerifyOtpQueryDto } from '../dto/verifyOtp.dto';
+import { AuthService } from '../services/auth.service';
 
 @Controller('/login')
 export class AuthController {
-    constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
-    @Version('1')
-    @Post('/send-otp')
-    @HttpCode(HttpStatus.ACCEPTED)
-    @UseGuards(PhoneNumberGuard)
-    @SkipThrottle({ default: true, })
-    @Throttle({
-        'otp-rate-limiter': { ttl: 50_000, limit: 1 }
-    })
+  @Public()
+  @Version('1')
+  @Post('/send-otp')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseGuards(PhoneNumberGuard)
+  @SkipThrottle({ default: true })
+  @Throttle({
+    'otp-rate-limiter': { ttl: 50_000, limit: 4 },
+  })
+  async sendOtp(
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    )
+    sendOtpDto: SendOtpDto,
+  ) {
+    return this.authService.sendOtp(sendOtpDto);
+  }
 
-    async sendOtp(
-        @Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-        sendOtpDto: SendOtpDto,
+  @Public()
+  @Version('1')
+  @Post('/verify-otp')
+  @SkipThrottle({ default: true, 'otp-rate-limiter': true })
+  @Throttle({ 'verify-rate-limiter': { limit: 3, ttl: 60_000 } })
+  async verifyOtp(
+    @Query(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    )
+    query: VerifyOtpQueryDto,
 
-    ) {
-        return this.authService.sendOtp(sendOtpDto);
-    }
+    @Body(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    )
+    body: VerifyOtpBodyDto,
+  ) {
+    return this.authService.verifyOtp(query.phoneNumber, body.otp);
+  }
 
-    @Version('1')
-    @Post('/verify-otp')
-    @SkipThrottle({ default: true, 'otp-rate-limiter': true })
-    @Throttle({ 'verify-rate-limiter': { limit: 3, ttl: 60_000 } })
+  @Public()
+  @Post('/token/refresh')
+  async RefreshToken(@Body() token: RefreshTokenDto) {
+    this.authService.refreshToken(token);
+  }
 
-    async verifyOtp(
-        @Query(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-        query: VerifyOtpQueryDto,
+  // work as the handshake call to check if the current access token is valid or not ,
+  // the logic of validating is in the JwtAuthGuard.
+  @Get('/validate')
+  async ValidateToken() {
+    return true;
+  }
 
-        @Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
-        body: VerifyOtpBodyDto,
-    ) {
-        return this.authService.verifyOtp(query.phoneNumber, body.otp);
-    }
+  @Get('/a1')
+  async a1() {
+    return true;
+  }
+
+  @Get('/a2')
+  async a2() {
+    return true;
+  }
+
+  @Get('/a3')
+  async a3() {
+    return true;
+  }
 }
