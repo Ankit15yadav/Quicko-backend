@@ -1,8 +1,9 @@
 import crypto from 'crypto';
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { FIVE_MINUTES } from './common/constants';
 import { IGenerateOtp } from './common/interface';
 import { APP_CONFIG } from './config/app.config';
+import { decodedJwtPayload } from './modules/auth/services/auth.service';
 
 export const GenerateOtp = (
   phoneNumber: string,
@@ -40,7 +41,7 @@ export const validateHash = (h1: string, h2: string) => {
 };
 
 export const generateToken = (
-  payload: JwtPayload,
+  payload: decodedJwtPayload,
   accessTokenSecretKey: string,
   refreshTokenSecretKey: string,
 ) => {
@@ -52,4 +53,10 @@ export const generateToken = (
   });
 
   return { accessToken, refreshToken };
+};
+
+export const thirtyDaysFromNow = (): Date => {
+  const date = new Date();
+  date.setDate(date.getDate() + 30);
+  return date;
 };

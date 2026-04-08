@@ -1,9 +1,11 @@
 import { Public } from '@/common/decorators';
+import { OtpThrottleGuard } from '@/common/guards/otp.throttle.guard';
 import { PhoneNumberGuard } from '@/common/guards/phone-number.guard';
 import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -26,7 +28,7 @@ export class AuthController {
   @Version('1')
   @Post('/send-otp')
   @HttpCode(HttpStatus.ACCEPTED)
-  @UseGuards(PhoneNumberGuard)
+  @UseGuards(PhoneNumberGuard, OtpThrottleGuard)
   @SkipThrottle({ default: true })
   @Throttle({
     'otp-rate-limiter': { ttl: 50_000, limit: 4 },
@@ -47,6 +49,7 @@ export class AuthController {
   @Public()
   @Version('1')
   @Post('/verify-otp')
+  @UseGuards(OtpThrottleGuard)
   @SkipThrottle({ default: true, 'otp-rate-limiter': true })
   @Throttle({ 'verify-rate-limiter': { limit: 3, ttl: 60_000 } })
   async verifyOtp(
@@ -67,14 +70,21 @@ export class AuthController {
       }),
     )
     body: VerifyOtpBodyDto,
+    @Headers('x-device-name') deviceName: string,
+    @Headers('x-device-loction') deviceLocation: string,
   ) {
-    return this.authService.verifyOtp(query.phoneNumber, body.otp);
+    return this.authService.verifyOtp(
+      query.phoneNumber,
+      body.otp,
+      deviceName,
+      deviceLocation,
+    );
   }
 
   @Public()
   @Post('/token/refresh')
   async RefreshToken(@Body() token: RefreshTokenDto) {
-    this.authService.refreshToken(token);
+    return this.authService.refreshToken(token);
   }
 
   // work as the handshake call to check if the current access token is valid or not ,

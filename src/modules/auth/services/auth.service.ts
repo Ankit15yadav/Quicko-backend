@@ -6,7 +6,6 @@ import {
   MAX_OTP_VALUE,
   MIN_OTP_VALUE,
   OTP_QUEUE,
-  REFRESH_TOKEN,
   SEND_OTP,
   TOKEN_SYNC_QUEUE,
 } from '@/common/constants';
@@ -16,6 +15,7 @@ import {
   createCryptoHash,
   GenerateOtp,
   generateToken,
+  thirtyDaysFromNow,
   validateHash,
 } from '@/utils';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -24,18 +24,18 @@ import {
   HttpStatus,
   Inject,
   Injectable,
-  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { ThrottlerException } from '@nestjs/throttler';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
-import type { JwtPayload } from 'jsonwebtoken';
 import jwt from 'jsonwebtoken';
 
-import { Model } from 'mongoose';
+import { TokenFamily } from '@/schema/token';
+import { ThrottlerException } from '@nestjs/throttler';
+import { randomUUID } from 'crypto';
+import { Model, Types } from 'mongoose';
 import { SendOtpDto } from '../dto/sendOtp.dto';
 
 interface OtpPayload {
@@ -44,23 +44,24 @@ interface OtpPayload {
   isVerified?: boolean;
 }
 
-@Injectable()
-export class AuthService implements OnModuleInit {
-  #accessTokenSecret: string;
-  #refreshTokenSecret: string;
+export interface decodedJwtPayload {
+  name: string;
+  phoneNumber: string;
+  userId: Types.ObjectId;
+  familyId: string;
+  tokenVersion: number;
+}
 
-  onModuleInit() {
-    this.#accessTokenSecret = this.configService.get<string>(
-      'SECRET.ACCESS_TOKEN',
-    )!;
-    this.#refreshTokenSecret = this.configService.get<string>(
-      'SECRET.REFRESH_TOKEN',
-    )!;
-  }
+@Injectable()
+export class AuthService {
+  #accessTokenSecret!: string;
+  #refreshTokenSecret!: string;
 
   constructor(
     @InjectModel(User.name)
     private userModel: Model<User>,
+    @InjectModel(TokenFamily.name)
+    private TokenFamilyModel: Model<TokenFamily>,
     @InjectQueue(OTP_QUEUE)
     private otpQueue: Queue,
     @InjectQueue(TOKEN_SYNC_QUEUE)
@@ -68,7 +69,14 @@ export class AuthService implements OnModuleInit {
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
     private configService: ConfigService,
-  ) {}
+  ) {
+    this.#accessTokenSecret = this.configService.get<string>(
+      'SECRET.ACCESS_TOKEN',
+    )!;
+    this.#refreshTokenSecret = this.configService.get<string>(
+      'SECRET.REFRESH_TOKEN',
+    )!;
+  }
 
   public async sendOtp(body: SendOtpDto) {
     const { phoneNumber } = body;
@@ -104,10 +112,19 @@ export class AuthService implements OnModuleInit {
     };
   }
 
-  public async verifyOtp(phoneNumber: string, otp: string) {
+  public async verifyOtp(
+    phoneNumber: string,
+    otp: string,
+    deviceName: string,
+    deviceLocation: string,
+  ) {
     const PHONE_NUMBER = `${INDIA_COUNTRY_CODE}${phoneNumber}`;
+    const INITIAL_TOKEN_VERSION = 1;
+
     const otpKey = `otp:${PHONE_NUMBER}`;
     const hashingData = `${PHONE_NUMBER}.${otp}`;
+
+    const familyId = randomUUID();
 
     let cachedOtp = (await this.redis.get(otpKey)) ?? '';
     if (!cachedOtp) {
@@ -158,22 +175,27 @@ export class AuthService implements OnModuleInit {
       this.redis.del(otpKey),
     ]);
 
-    const payLoad: JwtPayload = {
+    const payLoad: decodedJwtPayload = {
       name: user.name,
       phoneNumber: user?.phoneNumber,
       userId: user?._id,
+      familyId,
+      tokenVersion: INITIAL_TOKEN_VERSION,
     };
+
+    await this.TokenFamilyModel.create({
+      familyId,
+      deviceName,
+      deviceLocation,
+      userId: user?._id,
+      tokenVersion: INITIAL_TOKEN_VERSION,
+    });
 
     const { accessToken, refreshToken } = generateToken(
       payLoad,
       this.#accessTokenSecret,
       this.#refreshTokenSecret,
     );
-
-    await this.tokenSyncQueue.add(REFRESH_TOKEN, {
-      userId: user._id,
-      refreshToken,
-    });
 
     return {
       message: 'OTP VERIFIED SUCCESSFULLY',
@@ -183,29 +205,87 @@ export class AuthService implements OnModuleInit {
         tokens: {
           accessToken,
           refreshToken,
+          ...payLoad,
         },
       },
     };
   }
 
   public async refreshToken({ refreshToken }: { refreshToken: string }) {
-    const decoded = jwt.decode(refreshToken) as jwt.JwtPayload;
+    try {
+      const decoded = jwt.verify(
+        refreshToken,
+        this.#refreshTokenSecret,
+      ) as decodedJwtPayload;
 
-    if (!decoded) throw new UnauthorizedException('Invalid refresh token');
+      console.log('decode: ', decoded);
 
-    // Strip all JWT registered claims — only keep your custom fields
-    const { iat, exp, nbf, iss, aud, sub, jti, ...payload } = decoded;
+      if (!decoded) throw new UnauthorizedException('Invalid refresh token');
 
-    console.log('token refreshed');
+      const { familyId, tokenVersion } = decoded ?? {};
 
-    const tokens = generateToken(
-      payload,
-      this.#accessTokenSecret,
-      this.#refreshTokenSecret,
-    );
+      const tokenFamilyData = await this.TokenFamilyModel.findOne({
+        familyId,
+      })
+        .select('tokenVersion')
+        .lean();
 
-    console.log('tokens: ', tokens);
+      console.log('token family data: ', tokenFamilyData);
 
-    return tokens;
+      const { tokenVersion: storedTokenVersion } = tokenFamilyData ?? {};
+
+      if (tokenVersion !== storedTokenVersion) {
+        console.log('version mis match');
+        // chances that token have been compromised. Delete the family and force Logout the user
+        await this.TokenFamilyModel.deleteOne({ familyId });
+        throw new UnauthorizedException('Invalid Refresh Token');
+      }
+
+      const updatedTokenVersion = storedTokenVersion + 1;
+
+      const newPayload: decodedJwtPayload = {
+        name: decoded.name,
+        phoneNumber: decoded.phoneNumber,
+        userId: decoded.userId,
+        familyId: decoded.familyId,
+        tokenVersion: updatedTokenVersion,
+      };
+
+      console.log('new payload: ', newPayload);
+
+      console.log(
+        'secrets: ',
+        this.#accessTokenSecret,
+        this.#refreshTokenSecret,
+      );
+
+      const tokens = generateToken(
+        newPayload,
+        this.#accessTokenSecret,
+        this.#refreshTokenSecret,
+      );
+
+      console.log('tokens: ', tokens);
+
+      await this.TokenFamilyModel.updateOne(
+        { familyId },
+        {
+          $set: {
+            tokenVersion: updatedTokenVersion,
+            lastUsedAt: new Date(),
+            expiryTime: thirtyDaysFromNow(),
+          },
+        },
+      );
+
+      return {
+        success: true,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    } catch (error) {
+      console.error(error);
+      throw new UnauthorizedException('Token refresh fail');
+    }
   }
 }
