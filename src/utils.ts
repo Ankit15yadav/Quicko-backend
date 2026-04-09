@@ -1,9 +1,12 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { FIVE_MINUTES } from './common/constants';
-import { IGenerateOtp } from './common/interface';
+import {
+  CountryDialCode,
+  decodedJwtPayload,
+  IGenerateOtp,
+} from './common/interface';
 import { APP_CONFIG } from './config/app.config';
-import { decodedJwtPayload } from './modules/auth/services/auth.service';
 
 export const GenerateOtp = (
   phoneNumber: string,
@@ -37,20 +40,27 @@ export const createCryptoHash = (data: any) => {
 };
 
 export const validateHash = (h1: string, h2: string) => {
-  return h1 === h2;
+  return crypto.timingSafeEqual(Buffer.from(h1), Buffer.from(h2));
 };
 
 export const generateToken = (
   payload: decodedJwtPayload,
-  accessTokenSecretKey: string,
-  refreshTokenSecretKey: string,
+  accessTokenSecretKey?: string,
+  refreshTokenSecretKey?: string,
 ) => {
-  const accessToken = jwt.sign(payload, accessTokenSecretKey, {
-    expiresIn: '15s',
-  });
-  const refreshToken = jwt.sign(payload, refreshTokenSecretKey, {
-    expiresIn: '30d',
-  });
+  let accessToken: string | null = null;
+  let refreshToken: string | null = null;
+  if (accessTokenSecretKey) {
+    accessToken = jwt.sign(payload, accessTokenSecretKey, {
+      expiresIn: '5hr',
+    });
+  }
+
+  if (refreshTokenSecretKey) {
+    refreshToken = jwt.sign(payload, refreshTokenSecretKey, {
+      expiresIn: '30days',
+    });
+  }
 
   return { accessToken, refreshToken };
 };
@@ -60,3 +70,18 @@ export const thirtyDaysFromNow = (): Date => {
   date.setDate(date.getDate() + 30);
   return date;
 };
+
+export function getPhoneNumber(
+  phoneNumber: string,
+  countryCode: CountryDialCode,
+): string {
+  return `${countryCode}${phoneNumber}`;
+}
+
+export function generateKey(keyName: string, secondaryValue?: string): string {
+  if (!keyName) return '';
+
+  if (secondaryValue) return `${keyName}:${secondaryValue}`;
+
+  return `cached:${keyName}`;
+}

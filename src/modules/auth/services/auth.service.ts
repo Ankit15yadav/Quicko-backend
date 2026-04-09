@@ -1,7 +1,6 @@
 import {
   DEFAULT_OTP_EXPIRY_TIME,
   FIVE_MINUTES,
-  INDIA_COUNTRY_CODE,
   MAX_OTP_ATTEMPTS,
   MAX_OTP_VALUE,
   MIN_OTP_VALUE,
@@ -13,8 +12,10 @@ import { REDIS_CLIENT } from '@/redis-v2/redis-v2.module';
 import { User } from '@/schema/user';
 import {
   createCryptoHash,
+  generateKey,
   GenerateOtp,
   generateToken,
+  getPhoneNumber,
   thirtyDaysFromNow,
   validateHash,
 } from '@/utils';
@@ -32,24 +33,16 @@ import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import jwt from 'jsonwebtoken';
 
+import { decodedJwtPayload } from '@/common/interface';
 import { TokenFamily } from '@/schema/token';
 import { ThrottlerException } from '@nestjs/throttler';
 import { randomUUID } from 'crypto';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { SendOtpDto } from '../dto/sendOtp.dto';
 
 interface OtpPayload {
   otp: string;
   attempts: number;
-  isVerified?: boolean;
-}
-
-export interface decodedJwtPayload {
-  name: string;
-  phoneNumber: string;
-  userId: Types.ObjectId;
-  familyId: string;
-  tokenVersion: number;
 }
 
 @Injectable()
@@ -80,15 +73,16 @@ export class AuthService {
 
   public async sendOtp(body: SendOtpDto) {
     const { phoneNumber } = body;
-    const PHONE_NUMBER = `${INDIA_COUNTRY_CODE}${phoneNumber}`;
-    const otpKey = `otp:${PHONE_NUMBER}`;
+    const phoneNumberToUse = getPhoneNumber(phoneNumber, '+91');
+    const otpKey = generateKey('otp', phoneNumber);
+    const minTtl = 5;
 
-    const existing = await this.redis.get(otpKey);
-    if (existing) {
-      this.redis.del(otpKey);
+    const timeToLive = await this.redis.ttl(otpKey);
+    if (timeToLive >= minTtl) {
+      throw new UnauthorizedException('TOO MANY REQUESTS');
     }
 
-    const OTP = GenerateOtp(PHONE_NUMBER, MAX_OTP_VALUE, MIN_OTP_VALUE);
+    const OTP = GenerateOtp(phoneNumberToUse, MAX_OTP_VALUE, MIN_OTP_VALUE);
     const { otp, hashWithExpiryTime } = OTP;
 
     const payLoad: OtpPayload = {
@@ -103,7 +97,7 @@ export class AuthService {
         'EX',
         DEFAULT_OTP_EXPIRY_TIME,
       ),
-      this.otpQueue.add(SEND_OTP, { phoneNumber: PHONE_NUMBER, otp }),
+      this.otpQueue.add(SEND_OTP, { phoneNumber: phoneNumberToUse, otp }),
     ]);
 
     return {
@@ -118,11 +112,11 @@ export class AuthService {
     deviceName: string,
     deviceLocation: string,
   ) {
-    const PHONE_NUMBER = `${INDIA_COUNTRY_CODE}${phoneNumber}`;
+    const phoneNumberToUse = getPhoneNumber(phoneNumber, '+91');
     const INITIAL_TOKEN_VERSION = 1;
 
-    const otpKey = `otp:${PHONE_NUMBER}`;
-    const hashingData = `${PHONE_NUMBER}.${otp}`;
+    const otpKey = generateKey('otp', phoneNumber);
+    const hashingData = `${phoneNumberToUse}.${otp}`;
 
     const familyId = randomUUID();
 
@@ -162,11 +156,11 @@ export class AuthService {
 
     const [user] = await Promise.all([
       this.userModel.findOneAndUpdate(
-        { phoneNumber: PHONE_NUMBER },
+        { phoneNumber: phoneNumberToUse },
         {
           $set: { isLoggedIn: true, lastLoginAt: new Date() },
           $setOnInsert: {
-            phoneNumber: PHONE_NUMBER,
+            phoneNumber: phoneNumberToUse,
             createdAt: new Date(),
           },
         },
@@ -174,6 +168,10 @@ export class AuthService {
       ),
       this.redis.del(otpKey),
     ]);
+
+    if (user.isNewUser) {
+      //TODO: Trigger onboarding message to the user
+    }
 
     const payLoad: decodedJwtPayload = {
       name: user.name,
@@ -197,6 +195,9 @@ export class AuthService {
       this.#refreshTokenSecret,
     );
 
+    if (!accessToken || !refreshToken)
+      throw new Error('Token generation failed — secrets missing');
+
     return {
       message: 'OTP VERIFIED SUCCESSFULLY',
       data: {
@@ -205,7 +206,6 @@ export class AuthService {
         tokens: {
           accessToken,
           refreshToken,
-          ...payLoad,
         },
       },
     };
@@ -218,8 +218,6 @@ export class AuthService {
         this.#refreshTokenSecret,
       ) as decodedJwtPayload;
 
-      console.log('decode: ', decoded);
-
       if (!decoded) throw new UnauthorizedException('Invalid refresh token');
 
       const { familyId, tokenVersion } = decoded ?? {};
@@ -230,12 +228,14 @@ export class AuthService {
         .select('tokenVersion')
         .lean();
 
-      console.log('token family data: ', tokenFamilyData);
+      if (!tokenFamilyData)
+        throw new UnauthorizedException(
+          'Session not found, please login again',
+        );
 
       const { tokenVersion: storedTokenVersion } = tokenFamilyData ?? {};
 
       if (tokenVersion !== storedTokenVersion) {
-        console.log('version mis match');
         // chances that token have been compromised. Delete the family and force Logout the user
         await this.TokenFamilyModel.deleteOne({ familyId });
         throw new UnauthorizedException('Invalid Refresh Token');
@@ -251,21 +251,11 @@ export class AuthService {
         tokenVersion: updatedTokenVersion,
       };
 
-      console.log('new payload: ', newPayload);
-
-      console.log(
-        'secrets: ',
-        this.#accessTokenSecret,
-        this.#refreshTokenSecret,
-      );
-
       const tokens = generateToken(
         newPayload,
         this.#accessTokenSecret,
         this.#refreshTokenSecret,
       );
-
-      console.log('tokens: ', tokens);
 
       await this.TokenFamilyModel.updateOne(
         { familyId },
@@ -284,8 +274,16 @@ export class AuthService {
         refreshToken: tokens.refreshToken,
       };
     } catch (error) {
-      console.error(error);
-      throw new UnauthorizedException('Token refresh fail');
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new UnauthorizedException('Refresh token expired');
+      }
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+      throw error;
     }
   }
 }

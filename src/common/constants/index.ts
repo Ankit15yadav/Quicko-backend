@@ -14,6 +14,7 @@ export const OTP_QUEUE = 'otp-queue';
 export const SEND_OTP = 'send-otp';
 export const TOKEN_SYNC_QUEUE = 'refreshToken-sync-queue';
 export const REFRESH_TOKEN = 'refresh-token';
+export const ONBOARDING_SMS_QUEUE = 'onboard-sms-queue';
 
 // guards
 export const IS_PUBLIC_KEY = 'isPublic';

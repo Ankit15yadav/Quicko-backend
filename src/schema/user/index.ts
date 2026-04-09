@@ -10,7 +10,6 @@ export class User extends Document {
   @Prop() isNewUser!: boolean;
   @Prop() lastLoginAt!: Date;
   @Prop() createdAt!: Date;
-  @Prop() refreshToken!: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
